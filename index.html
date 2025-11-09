@@ -1,0 +1,215 @@
+<!-- index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DWLR Groundwater Predictor - HTML/JS</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; background-color: #f4f4f9; color: #333; }
+        .container { max-width: 1200px; margin: auto; background: #fff; padding: 25px; border-radius: 10px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); }
+        h1 { color: #007bff; text-align: center; margin-bottom: 30px; }
+        .kpis { display: flex; justify-content: space-around; margin-bottom: 30px; }
+        .kpi-card { background: #e9f5ff; padding: 15px; border-radius: 8px; text-align: center; flex: 1; margin: 0 10px; border-left: 5px solid #007bff; }
+        .kpi-value { font-size: 2em; font-weight: bold; color: #007bff; }
+        .kpi-label { font-size: 0.9em; color: #666; }
+        .content-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 30px; }
+        .input-group label { display: block; margin-top: 15px; font-weight: bold; }
+        .input-group input, .input-group button { width: 100%; padding: 10px; margin-top: 5px; border-radius: 5px; border: 1px solid #ccc; box-sizing: border-box; }
+        button { background-color: #28a745; color: white; border: none; cursor: pointer; margin-top: 20px !important; font-size: 1.1em; }
+        button:hover { background-color: #218838; }
+        #prediction-result { margin-top: 25px; padding: 15px; border-radius: 8px; background-color: #d4edda; color: #155724; font-size: 1.3em; text-align: center; font-weight: bold; display: none; }
+        /* Simple Chart CSS */
+        #chart-container { height: 350px; background: #f0f0f0; border-radius: 8px; padding: 10px; margin-bottom: 20px; }
+    </style>
+    <!-- Chart.js for visualization (a simple JS library) -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.1/dist/chart.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>💧 DWLR Groundwater Level Prediction Dashboard</h1>
+        
+        <div class="kpis">
+            <div class="kpi-card">
+                <div class="kpi-value" id="kpi-level">-- m</div>
+                <div class="kpi-label">Latest Water Level (m)</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-value" id="kpi-rainfall">-- mm/day</div>
+                <div class="kpi-label">Average Rainfall</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-value" id="kpi-r2">--</div>
+                <div class="kpi-label">Model R-squared (Test)</div>
+            </div>
+        </div>
+
+        <div class="content-grid">
+            <div class="historical-section">
+                <h2>Historical Water Level</h2>
+                <div id="chart-container">
+                    <canvas id="waterLevelChart"></canvas>
+                </div>
+            </div>
+
+            <div class="prediction-section">
+                <h2>Predict Future Level</h2>
+                <div class="input-group">
+                    <label for="future-date">Date to Predict</label>
+                    <input type="date" id="future-date" required>
+                </div>
+                <div class="input-group">
+                    <label for="future-rainfall">Expected Rainfall (mm)</label>
+                    <input type="number" id="future-rainfall" step="0.1" min="0" value="0.0" required>
+                </div>
+                <div class="input-group">
+                    <label for="future-temp">Expected Temperature (°C)</label>
+                    <input type="number" id="future-temp" step="0.1" value="25.0" required>
+                </div>
+                
+                <button onclick="makePrediction()">Calculate Prediction</button>
+                
+                <div id="prediction-result"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let modelParams = {};
+        let latestData = {};
+        let historicalData = {};
+        let avgRainfall = 0;
+
+        const FEATURE_ORDER = [
+            'Water_Level_Lag1', 'Water_Level_Lag7', 'Rainfall_mm', 
+            'Temperature_C', 'Month', 'Day_of_Year'
+        ];
+
+        // --- Data Loading ---
+        async function loadModelData() {
+            try {
+                // Fetch the JSON file created by model_training.py
+                const response = await fetch('model_coefficients.json');
+                const data = await response.json();
+
+                modelParams = data.model_params;
+                latestData = data.latest_water_levels;
+                historicalData = data.historical_data;
+                avgRainfall = data.avg_rainfall;
+                
+                initializeDashboard();
+
+            } catch (error) {
+                document.querySelector('.container').innerHTML = `
+                    <h1>Error: Could Not Load Model Data</h1>
+                    <p>Ensure you have run the **model_training.py** script successfully to create 
+                    the **model_coefficients.json** file.</p>
+                `;
+                console.error("Error loading model data:", error);
+            }
+        }
+
+        // --- Prediction Logic (Translating Python LR to JavaScript) ---
+        function makePrediction() {
+            const dateInput = document.getElementById('future-date').value;
+            const rainfall = parseFloat(document.getElementById('future-rainfall').value);
+            const temp = parseFloat(document.getElementById('future-temp').value);
+            const resultDiv = document.getElementById('prediction-result');
+            
+            if (!dateInput) {
+                alert("Please select a date.");
+                return;
+            }
+
+            const futureDate = new Date(dateInput);
+            const latestDate = new Date(historicalData.dates[historicalData.dates.length - 1]);
+
+            // Ensure prediction is for the next day or later
+            if (futureDate <= latestDate) {
+                alert("Please select a date *after* the last recorded date (" + historicalData.dates[historicalData.dates.length - 1] + ").");
+                return;
+            }
+
+            // Calculate Date-Time features
+            const month = futureDate.getMonth() + 1; // 1-12
+            const startOfYear = new Date(futureDate.getFullYear(), 0, 0);
+            const diff = futureDate - startOfYear;
+            const oneDay = 1000 * 60 * 60 * 24;
+            const dayOfYear = Math.floor(diff / oneDay);
+
+            // Create the feature vector in the exact order the model was trained with
+            const inputFeatures = {
+                'Water_Level_Lag1': latestData.lag1,
+                'Water_Level_Lag7': latestData.lag7,
+                'Rainfall_mm': rainfall,
+                'Temperature_C': temp,
+                'Month': month,
+                'Day_of_Year': dayOfYear
+            };
+
+            let predictedLevel = modelParams.intercept;
+            
+            // Apply coefficients
+            for (const feature of FEATURE_ORDER) {
+                predictedLevel += modelParams.coefficients[feature] * inputFeatures[feature];
+            }
+
+            // Display Result
+            resultDiv.innerHTML = `Predicted Level: <b>${predictedLevel.toFixed(2)} meters</b>`;
+            resultDiv.style.display = 'block';
+        }
+
+        // --- Dashboard Initialization ---
+        function initializeDashboard() {
+            // Set KPIs
+            document.getElementById('kpi-level').textContent = `${latestData.latest_level.toFixed(2)} m`;
+            document.getElementById('kpi-rainfall').textContent = `${avgRainfall.toFixed(2)} mm/day`;
+            document.getElementById('kpi-r2').textContent = modelParams.r2_score.toFixed(4);
+
+            // Set default date input (day after last historical record)
+            const latestHistoricalDate = new Date(historicalData.dates[historicalData.dates.length - 1]);
+            latestHistoricalDate.setDate(latestHistoricalDate.getDate() + 1);
+            const defaultDate = latestHistoricalDate.toISOString().split('T')[0];
+            document.getElementById('future-date').value = defaultDate;
+            document.getElementById('future-date').min = defaultDate;
+
+            // Set default rainfall/temp inputs
+            document.getElementById('future-rainfall').value = avgRainfall.toFixed(2);
+            document.getElementById('future-temp').value = 25.0; // Placeholder mean temp
+
+            // Initialize Chart (using Chart.js)
+            const ctx = document.getElementById('waterLevelChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: historicalData.dates,
+                    datasets: [{
+                        label: 'Depth to Water Level (m)',
+                        data: historicalData.levels,
+                        borderColor: '#007bff',
+                        borderWidth: 2,
+                        fill: false,
+                        pointRadius: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            title: { display: true, text: 'Date' },
+                            ticks: { autoSkip: true, maxTicksLimit: 10 }
+                        },
+                        y: {
+                            title: { display: true, text: 'Depth to Water Level (m)' }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Start the process
+        loadModelData();
+    </script>
+</body>
+</html>

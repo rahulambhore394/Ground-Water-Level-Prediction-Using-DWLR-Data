@@ -3,12 +3,12 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error, r2_score
-import joblib 
+import json
+import numpy as np
 
 # --- IMPORTANT: PLACE YOUR ACTUAL DWLR DATASET HERE ---
 DATA_PATH = 'DWLR_processed.csv' 
-
-# Define the expected columns in your dataset
+COEFF_FILE = 'model_coefficients.json'
 TARGET_COL = 'Water_Level_m'
 FEATURE_COLS = ['Rainfall_mm', 'Temperature_C'] 
 
@@ -28,26 +28,15 @@ def preprocess_and_train():
     print("\n--- Data Head ---")
     print(df.head())
     
-    # Check for target/feature presence (minimal check)
-    if TARGET_COL not in df.columns or not all(col in df.columns for col in FEATURE_COLS):
-        print(f"ERROR: Ensure your CSV has columns: Date, {TARGET_COL}, {FEATURE_COLS}")
-        return
-
-    # 1. Handle Missing Values (Impute with forward fill)
+    # 1. Handle Missing Values
     df = df.fillna(method='ffill').dropna()
     print(f"\nData size after cleaning: {len(df)}")
     
-    # --- Feature Engineering for Time Series Linear Regression ---
-    
-    # 2. Lagged Features (The core of time-series LR)
-    df['Water_Level_Lag1'] = df[TARGET_COL].shift(1) # Yesterday's level
-    df['Water_Level_Lag7'] = df[TARGET_COL].shift(7) # Level from 7 days ago
-    
-    # 3. Time-based Features (Seasonality)
+    # --- Feature Engineering ---
+    df['Water_Level_Lag1'] = df[TARGET_COL].shift(1)
+    df['Water_Level_Lag7'] = df[TARGET_COL].shift(7)
     df['Month'] = df.index.month
     df['Day_of_Year'] = df.index.dayofyear
-    
-    # Drop rows with NaN values created by the shift (first 7 rows)
     df = df.dropna() 
 
     # Define features (X) and target (Y)
@@ -55,12 +44,8 @@ def preprocess_and_train():
     X = df[features]
     Y = df[TARGET_COL]
     
-    # Split data for training and testing (shuffle=False for time-series)
+    # Split data for training and testing
     X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.2, shuffle=False)
-
-    print(f"\nTotal Samples (After Lagging): {len(df)}")
-    print(f"Training Samples: {len(X_train)}")
-    print(f"Testing Samples: {len(X_test)}")
     
     # --- Model Training: Linear Regression ---
     model = LinearRegression()
@@ -68,21 +53,54 @@ def preprocess_and_train():
 
     # --- Model Evaluation ---
     Y_pred = model.predict(X_test)
-    mse = mean_squared_error(Y_test, Y_pred)
     r2 = r2_score(Y_test, Y_pred)
     
     print("\n--- Model Performance (on Test Set) ---")
     print(f"R-squared (R2): {r2:.4f}")
-    
-    # --- Save Model and Data for Streamlit App ---
-    joblib.dump(model, 'groundwater_model.pkl')
-    joblib.dump(features, 'model_features.pkl')
-    joblib.dump(r2, 'model_r2_score.pkl') # Save R2 for the dashboard
-    
-    # Save the full processed dataset for the app's visualization
-    df.to_csv('DWLR_processed.csv')
 
-    print("✅ Model trained and saved successfully.")
+    # --- Save Model Parameters and Data for HTML/JS ---
+    model_params = {
+        'intercept': model.intercept_,
+        'coefficients': dict(zip(features, model.coef_)),
+        'r2_score': r2
+    }
+    
+    # Get the latest 7 days of data for the dashboard's prediction calculation
+    latest_data = df.tail(7)[TARGET_COL].tolist()
+    
+    output_data = {
+        'model_params': model_params,
+        'latest_water_levels': {
+            'latest_level': latest_data[-1],
+            'lag1': latest_data[-1],
+            'lag7': latest_data[0] # The first of the last 7 days is the 7-day lag
+        },
+        'historical_data': {
+            'dates': df.index.strftime('%Y-%m-%d').tolist(),
+            'levels': df[TARGET_COL].tolist()
+        },
+        'avg_rainfall': df['Rainfall_mm'].mean()
+    }
+
+    with open(COEFF_FILE, 'w') as f:
+        json.dump(output_data, f)
+
+    print(f"✅ Model parameters and data saved to {COEFF_FILE} for the dashboard.")
 
 if __name__ == "__main__":
-    preprocess_and_train()
+    # --- SIMULATE DATA CREATION IF YOUR REAL FILE IS MISSING ---
+    # This block ensures the script runs for demonstration purposes if you haven't provided the CSV.
+    if not pd.io.common.file_exists(DATA_PATH):
+        print("\nWARNING: DWLR_Actual_Data.csv not found. Creating a simulated file for demonstration.")
+        N_DAYS = 500
+        dates = pd.date_range(start='2023-01-01', periods=N_DAYS, freq='D')
+        np.random.seed(42)
+        rainfall = np.abs(np.sin(np.linspace(0, 2 * np.pi, N_DAYS) * 2) * 10) + np.random.rand(N_DAYS) * 5
+        base_level = 15 + np.cumsum(np.random.randn(N_DAYS) * 0.05)
+        water_level_m = np.clip(base_level - rainfall * 0.5 + np.random.randn(N_DAYS) * 0.5, 10, 30)
+        temp = 25 + np.sin(np.linspace(0, 2 * np.pi, N_DAYS)) * 10 + np.random.randn(N_DAYS) * 2
+        data = pd.DataFrame({'Date': dates, TARGET_COL: water_level_m.round(2), 'Rainfall_mm': rainfall.round(2), 'Temperature_C': temp.round(2)})
+        data.to_csv(DATA_PATH, index=False)
+        print("Simulated data created. Run the script again now.")
+    else:
+        preprocess_and_train()
