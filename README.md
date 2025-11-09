@@ -1,101 +1,111 @@
-💧 DWLR Groundwater Level Prediction using Linear Regression
-Overview
 
-This project implements a Time-Series Forecasting solution to predict the Depth to Water Level (in meters) using historical Digital Water Level Recorder (DWLR) sensor data. The core of the prediction engine is a Multiple Linear Regression (MLR) model, which utilizes lagged historical water levels, rainfall, and temperature data as features.
 
-The project is deployed via an interactive web application built with Streamlit, allowing users to visualize historical data and input future environmental conditions to generate a forecast.
+# 💧 DWLR Groundwater Level Prediction (HTML/JS Deployment)
 
-Key Components
+## Overview
 
-Model: Multiple Linear Regression (MLR)
+This project provides a complete Time-Series Forecasting solution to predict the **Depth to Water Level** (in meters) using Actual Digital Water Level Recorder (DWLR) sensor data. The core model is a **Multiple Linear Regression (MLR)**, which utilizes lagged water levels, rainfall, and temperature as features.
 
-Method: Time-Series Forecasting using Lagged Features
+The solution is split into a Python-based ML core for training and an HTML/JavaScript interface for the dashboard deployment, ensuring no external web frameworks (like Streamlit or Plotly) are needed for the frontend.
 
-Interface: Streamlit Dashboard
+### Key Components
 
-🚀 Getting Started
+  * **Data Source:** `DWLR_Actual_Data.csv` (User-provided)
+  * **Model:** Multiple Linear Regression (MLR)
+  * **Model Persistence:** JSON (saving coefficients)
+  * **Web Dashboard:** HTML, CSS, and pure JavaScript
+  * **Visualization:** Chart.js (JavaScript Library)
+
+-----
+
+## 🚀 Getting Started
 
 Follow these steps to set up and run the project locally.
 
-Prerequisites
+### Prerequisites
 
-You need Python 3.8+ installed on your system.
+  * Python 3.8+
+  * Web Browser (to open `index.html`)
 
-1. Installation
+### 1\. Installation
 
 Open your terminal or command prompt and install the required Python libraries:
 
-code
-Bash
-download
-content_copy
-expand_less
-pip install pandas numpy scikit-learn streamlit joblib plotly
-2. File Structure
+```bash
+pip install pandas numpy scikit-learn
+```
 
-Ensure your project directory contains the following four files (The CSV will be generated in Step 3.1):
+### 2\. Data Preparation
 
-code
-Code
-download
-content_copy
-expand_less
+> **Crucial Step:** You must place your actual DWLR time-series data file in the project directory and name it:
+> `DWLR_Actual_Data.csv`
+
+Ensure this file contains at least the following columns: `Date`, `Water_Level_m`, `Rainfall_mm`, and `Temperature_C`.
+
+### 3\. File Structure
+
+Your project directory should contain these files:
+
+```plaintext
 dwlr_prediction/
-├── app.py                      # The Streamlit Dashboard application
-├── model_training.py           # Data preprocessing and Linear Regression model training script
-├── generate_data.py            # Script to create the simulated dataset
-└── DWLR_simulated_data.csv     # (Generated in Step 3.1)
-💻 Usage
+├── index.html                  # The complete HTML/CSS/JavaScript Dashboard
+├── model_training.py           # Python script for data processing and ML training
+├── DWLR_Actual_Data.csv        # (Your actual DWLR data file)
+└── model_coefficients.json     # (Generated in Step 4.1)
+```
 
-Run the following three commands in order from your project directory.
+-----
 
-3.1 Step 1: Generate Data
- Use DWLR Station Dataset
- 
-3.2 Step 2: Train the Model
+## 💻 Usage
 
-Next, run the training script to preprocess the data, create lagged features, train the Linear Regression model, and save the model files (.pkl).
+Run the following two commands in order from your project directory.
 
-code
-Bash
-download
-content_copy
-expand_less
+### 4.1 Step 1: Train the Model and Save Parameters
+
+Run the Python training script. This will train the Linear Regression model, evaluate it, and save the necessary parameters (coefficients, intercept, and data) to a JSON file.
+
+```bash
 python model_training.py
+```
 
-(Output: Model performance metrics, followed by ✅ Model trained and saved successfully...)
+Output: Model performance metrics and the creation of `model_coefficients.json`.
 
-3.3 Step 3: Launch the Dashboard
+### 4.2 Step 2: Open the Dashboard
 
-Finally, run the Streamlit application to launch the interactive dashboard.
+Open the `index.html` file directly in your web browser.
 
-code
-Bash
-download
-content_copy
-expand_less
-streamlit run app.py
+  * **Method:** Right-click on `index.html` and select "Open with" -\> "Your Browser" (Chrome, Firefox, Edge, etc.).
 
-The application will automatically open in your web browser (usually at http://localhost:8501).
+The JavaScript in the file will automatically load the `model_coefficients.json` data and make the dashboard functional.
 
-🛠️ Project Details
-Feature Engineering (Key to the MLR Model)
+-----
 
-To enable the simple Linear Regression model to handle time-series forecasting, the model_training.py script performs critical feature engineering:
+## 🛠️ Project Methodology: The Workflow
 
-Lag-1 Feature (Water_Level_Lag1): The water level from the previous day.
+The project is executed in two distinct stages:
 
-Lag-7 Feature (Water_Level_Lag7): The water level from seven days ago.
+### Stage A: Backend (Python) - ML Core
 
-Seasonality Features: Month and Day_of_Year extracted from the date.
+The `model_training.py` script handles the entire machine learning workflow:
 
-The model uses these six features, along with user-inputted future Rainfall and Temperature, to make its prediction.
+  * **Feature Engineering:** Creates Lagged Features (`Water_Level_Lag1`, `Lag7`) and Seasonal Features (`Month`, `Day_of_Year`) from the time-series data.
+  * **Training:** Trains the Scikit-learn `LinearRegression` model.
+  * **Deployment Prep:** Extracts the model's core mathematical components (intercept and coefficients) and essential historical data. This information is saved to `model_coefficients.json` for the frontend.
 
-🧑‍🤝‍🧑 Team and Contribution
-Team Member	Contribution Area	Files / Tasks Handled
-Rahul Ambhore	Data Acquisition & Foundation	Initial data simulation (generate_data.py), data loading, project environment setup, and foundational documentation.
-Aditya Ghuge	ML Modeling & Evaluation	Core feature engineering (Lagged Features), implementation of the Linear Regression model, model training (model_training.py), and evaluation metric calculation.
-Namdev Yevtikar	Dashboard Development & Deployment	Creation of the Streamlit interface (app.py), UI/UX design, integration of Plotly visualizations, and connecting the model for live prediction.
-⚖️ License
+### Stage B: Frontend (HTML/JS) - Dashboard
 
-This project is open-source and available under the MIT License (or appropriate license for your use).
+The `index.html` file handles all user interaction without a server:
+
+  * **Model Loading:** JavaScript uses the browser's file access to read and parse `model_coefficients.json`.
+  * **Visualization:** `Chart.js` renders the historical water level plot using the data loaded from the JSON file.
+  * **Live Prediction:** When the user enters inputs, the JavaScript function `makePrediction()` performs the complete Linear Regression equation using the loaded coefficients and the new feature inputs (Lagged, Rainfall, Temperature, Month, Day\_of\_Year), calculating the forecast entirely within the browser.
+
+-----
+
+## 🧑‍🤝‍🧑 Team and Contribution
+
+| Team Member | Contribution Area | Files / Tasks Handled |
+| :--- | :--- | :--- |
+| **Rahul Ambhore** | Data Preparation & Foundation | Data loading/integration (setting up `DWLR_Actual_Data.csv`), initial data cleaning, and foundational project setup. |
+| **Aditya Ghuge** | ML Modeling & Persistence | Core feature engineering (Lagged Features), implementation of the Linear Regression model, model training (`model_training.py`), evaluation, and saving coefficients to JSON. |
+| **Namdev Yevtikar** | Dashboard Development & Deployment | Creation of the HTML/CSS structure, all JavaScript prediction logic and data loading, and integration of `Chart.js` for visualizations (`index.html`). |
